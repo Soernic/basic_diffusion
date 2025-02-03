@@ -6,13 +6,15 @@ from data import MNIST
 from diffusion import Diffusion
 
 def train(epochs=100, device='cuda' if torch.cuda.is_available() else 'cpu', 
-         sample_dir='samples'):
+         sample_dir='samples', UNet='basic', batch_size=64):
    # Create sample directory
    os.makedirs(sample_dir, exist_ok=True)
+
+   print(f'Training on {device} with UNet={UNet}')
    
    # Setup
-   trainloader, testloader = MNIST()
-   model = Diffusion(device=device)
+   trainloader, testloader = MNIST(batch_size=batch_size)
+   model = Diffusion(device=device, UNet=UNet)
    loss_fn = torch.nn.MSELoss()
    optim = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-4)
    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=epochs)
@@ -74,4 +76,8 @@ def train(epochs=100, device='cuda' if torch.cuda.is_available() else 'cpu',
        scheduler.step()
 
 if __name__ == '__main__':
-   train(epochs=10)
+   train(
+    epochs=30, 
+    UNet='deepwide', 
+    batch_size=128
+    )

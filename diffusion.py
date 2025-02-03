@@ -5,14 +5,14 @@ import math
 import torch
 from torch import nn
 from data import MNIST
-from models import BasicUNet
+from models import BasicUNet, BasicUNet_Wide, BasicUNet_Deep, BasicUNet_DeepWide
 
 
 
 
 
 class Diffusion(nn.Module):
-    def __init__(self, T=1000, beta_limits=torch.Tensor([10**-4, 0.02]), device=None):
+    def __init__(self, T=1000, beta_limits=torch.Tensor([10**-4, 0.02]), device=None, UNet='basic'):
         super().__init__()
         self.T = T
         self.device = device if device is not None else torch.device('cpu')
@@ -20,7 +20,17 @@ class Diffusion(nn.Module):
         self.alphas, self.alpha_bars = self.construct_alphas()
 
         # TODO: Initialise network
-        self.net = BasicUNet().to(self.device)
+        if UNet == 'basic':
+            self.net = BasicUNet().to(self.device)
+
+        if UNet == 'wide':
+            self.net = BasicUNet_Wide().to(self.device)
+
+        if UNet == 'deep':
+            self.net = BasicUNet_Deep().to(self.device)
+
+        if UNet == 'deepwide':
+            self.net = BasicUNet_DeepWide().to(self.device)
 
 
     def construct_beta(self, beta_limits):
@@ -70,39 +80,41 @@ class Diffusion(nn.Module):
         Predict noise (epsilon) from x_t and timestep t
         """
         return self.net(x, t)
-    
+        
 
     def sample(self, batch_size=4):
         """
         Generate samples by running the diffusion process in reverse
         """
-        # Start from pure noise
-        x = torch.randn(batch_size, 1, 28, 28)
+        # Start from pure noise - make sure it's on the right device
+        x = torch.randn(batch_size, 1, 28, 28, device=self.device)
         
         # Iterate backwards through timesteps
         for t in reversed(range(0, self.T)):
-            # Convert to tensor and expand for batch
-            t_tensor = torch.ones(batch_size, dtype=torch.long) * t
+            # Convert to tensor and expand for batch - make sure it's on the right device
+            t_tensor = torch.ones(batch_size, dtype=torch.long, device=self.device) * t
             
             # Predict noise
             eps = self.predict(x, t_tensor)
             
-            # Reverse diffusion step
+            # Calculate reverse diffusion step
             alpha = self.alphas[t]
             alpha_bar = self.alpha_bars[t]
             beta = self.betas[t]
-            mean = 1/torch.sqrt(alpha)*(x - beta/torch.sqrt(1 - alpha_bar)*eps)
-
+            
+            # Calculate mean term
+            mean = (1 / torch.sqrt(alpha)) * (x - (beta / torch.sqrt(1 - alpha_bar)) * eps)
+            
+            # Add noise only if t > 0
             if t > 0:
-                noise = torch.randn_like(x)
+                noise = torch.randn_like(x, device=self.device)
                 variance = torch.sqrt(beta)
-                x = mean + variance*noise
-
+                x = mean + variance * noise
             else:
                 x = mean
 
         return x
-    
+
 
     def visualize_samples(self, num_samples=4):
         """

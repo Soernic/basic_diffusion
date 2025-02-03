@@ -107,6 +107,230 @@ class BasicUNet(nn.Module):
         return x
     
 
+class BasicUNet_Wide(nn.Module):
+    """Variant 1: More channels in intermediate layers"""
+    def __init__(self, time_dim=256):
+        super().__init__()
+        
+        # Time embedding (same as before)
+        self.time_mlp = nn.Sequential(
+            SinusoidalPositionEmbeddings(time_dim),
+            nn.Linear(time_dim, time_dim),
+            nn.ReLU()
+        )
+
+        # Encoder (wider)
+        self.enc1 = nn.Sequential(
+            nn.Conv2d(1, 128, 3, padding=1),    # Increased from 64 to 128
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.Conv2d(128, 128, 3, padding=1),  # Increased from 64 to 128
+            nn.BatchNorm2d(128),
+            nn.ReLU()
+        )
+        self.pool1 = nn.MaxPool2d(2)
+
+        # Middle (wider)
+        self.middle = nn.Sequential(
+            nn.Conv2d(128, 128, 3, padding=1),  # Increased from 64 to 128
+            nn.BatchNorm2d(128),
+            nn.ReLU()
+        )
+
+        # Decoder (wider)
+        self.up1 = nn.ConvTranspose2d(128, 128, 2, stride=2)  # Increased from 64 to 128
+        self.dec1 = nn.Sequential(
+            nn.Conv2d(128, 128, 3, padding=1),  # Increased from 64 to 128
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.Conv2d(128, 1, 3, padding=1)     # Output still 1 channel
+        )
+
+    def forward(self, x, t):
+        # Encode
+        x1 = self.enc1(x)
+        x = self.pool1(x1)
+
+        # Time embedding
+        t = self.time_mlp(t)
+        b, c, h, w = x.shape
+        time_emb = t.view(b, -1, 1, 1).repeat(1, 1, h, w)
+        x = x + time_emb[:, :c]
+
+        # Middle
+        x = self.middle(x)
+
+        # Decode
+        x = self.up1(x)
+        x = self.dec1(x)
+        
+        return x
+
+class BasicUNet_Deep(nn.Module):
+    """Variant 2: Deeper network (more levels)"""
+    def __init__(self, time_dim=256):
+        super().__init__()
+        
+        # Time embedding (same as before)
+        self.time_mlp = nn.Sequential(
+            SinusoidalPositionEmbeddings(time_dim),
+            nn.Linear(time_dim, time_dim),
+            nn.ReLU()
+        )
+
+        # Encoder (deeper)
+        self.enc1 = nn.Sequential(
+            nn.Conv2d(1, 64, 3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.Conv2d(64, 64, 3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU()
+        )
+        self.pool1 = nn.MaxPool2d(2)
+        
+        self.enc2 = nn.Sequential(
+            nn.Conv2d(64, 64, 3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.Conv2d(64, 64, 3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU()
+        )
+        self.pool2 = nn.MaxPool2d(2)
+
+        # Middle
+        self.middle = nn.Sequential(
+            nn.Conv2d(64, 64, 3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU()
+        )
+
+        # Decoder (deeper)
+        self.up2 = nn.ConvTranspose2d(64, 64, 2, stride=2)
+        self.dec2 = nn.Sequential(
+            nn.Conv2d(64, 64, 3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU()
+        )
+        
+        self.up1 = nn.ConvTranspose2d(64, 64, 2, stride=2)
+        self.dec1 = nn.Sequential(
+            nn.Conv2d(64, 64, 3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.Conv2d(64, 1, 3, padding=1)
+        )
+
+    def forward(self, x, t):
+        # Encode
+        x1 = self.enc1(x)
+        x = self.pool1(x1)
+        
+        x2 = self.enc2(x)
+        x = self.pool2(x2)
+
+        # Time embedding
+        t = self.time_mlp(t)
+        b, c, h, w = x.shape
+        time_emb = t.view(b, -1, 1, 1).repeat(1, 1, h, w)
+        x = x + time_emb[:, :c]
+
+        # Middle
+        x = self.middle(x)
+
+        # Decode
+        x = self.up2(x)
+        x = self.dec2(x)
+        
+        x = self.up1(x)
+        x = self.dec1(x)
+        
+        return x
+
+class BasicUNet_DeepWide(nn.Module):
+    """Variant 3: Both deeper and wider"""
+    def __init__(self, time_dim=256):
+        super().__init__()
+        
+        # Time embedding (same as before)
+        self.time_mlp = nn.Sequential(
+            SinusoidalPositionEmbeddings(time_dim),
+            nn.Linear(time_dim, time_dim),
+            nn.ReLU()
+        )
+
+        # Encoder (deeper and wider)
+        self.enc1 = nn.Sequential(
+            nn.Conv2d(1, 128, 3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.Conv2d(128, 128, 3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU()
+        )
+        self.pool1 = nn.MaxPool2d(2)
+        
+        self.enc2 = nn.Sequential(
+            nn.Conv2d(128, 256, 3, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.Conv2d(256, 256, 3, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU()
+        )
+        self.pool2 = nn.MaxPool2d(2)
+
+        # Middle
+        self.middle = nn.Sequential(
+            nn.Conv2d(256, 256, 3, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU()
+        )
+
+        # Decoder (deeper and wider)
+        self.up2 = nn.ConvTranspose2d(256, 128, 2, stride=2)
+        self.dec2 = nn.Sequential(
+            nn.Conv2d(128, 128, 3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU()
+        )
+        
+        self.up1 = nn.ConvTranspose2d(128, 64, 2, stride=2)
+        self.dec1 = nn.Sequential(
+            nn.Conv2d(64, 64, 3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.Conv2d(64, 1, 3, padding=1)
+        )
+
+    def forward(self, x, t):
+        # Encode
+        x1 = self.enc1(x)
+        x = self.pool1(x1)
+        
+        x2 = self.enc2(x)
+        x = self.pool2(x2)
+
+        # Time embedding
+        t = self.time_mlp(t)
+        b, c, h, w = x.shape
+        time_emb = t.view(b, -1, 1, 1).repeat(1, 1, h, w)
+        x = x + time_emb[:, :c]
+
+        # Middle
+        x = self.middle(x)
+
+        # Decode
+        x = self.up2(x)
+        x = self.dec2(x)
+        
+        x = self.up1(x)
+        x = self.dec1(x)
+        
+        return x
+
+
 if __name__ == '__main__':
         # Test the network
     net = BasicUNet()
